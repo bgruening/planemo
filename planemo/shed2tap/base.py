@@ -11,7 +11,13 @@ from six import iteritems
 import os
 import tarfile
 import zipfile
+import subprocess
+import tempfile
+import urllib
+import sys
+import re
 from ftplib import all_errors as FTPErrors  # tuple of exceptions
+from planemo.io import info, error
 
 TOOLSHED_MAP = {
     "toolshed": "https://toolshed.g2.bx.psu.edu",
@@ -93,6 +99,14 @@ class Repo(object):
         else:
             prefix = "toolshed"
         prior = elem.attrib.get("prior_installation_required", False)
+
+        package = elem.find('package')
+        if package is not None:
+            package_version = package.attrib.get('version', None)
+            package_name = package.attrib.get('name', None)
+        else:
+            package_version = None
+            package_name = None
         return Repo(
             prefix=prefix,
             name=elem.attrib["name"],
@@ -100,6 +114,8 @@ class Repo(object):
             tool_shed_url=tool_shed_url,
             changeset_revision=elem.attrib.get("changeset_revision", None),
             prior_installation_required=prior,
+            package_name = package_name,
+            package_version = package_version,
         )
 
     @staticmethod
@@ -316,6 +332,27 @@ class Actions(object):
             env_cmds.append('fi')
         return install_cmds, env_cmds
 
+    def to_conda(self, meta, build):
+        # Use self.os.title() to match "Linux" or "Darwin" in bash where case matters:
+        if self.os and self.architecture:
+            condition = '("%s" == `uname`) && ("%s" == `arch`)' % (self.os.title(), self.architecture)
+        elif self.os:
+            condition = '"%s" == `uname`' % self.os.title()
+        elif self.architecture:
+            condition = '"%s" == `arch`' % self.architecture
+        else:
+            condition = None
+
+        install_cmds = []
+        env_cmds = []
+
+        if condition:
+            info("\tArchitechture specific changes are handeled differently in Conda and we will skip this here. Manual work is required.")
+        else:
+            # Non-specific default action...
+            for action in self.actions:
+                action.to_conda(meta, build)
+
 
 class ActionPackage(object):
 
@@ -341,16 +378,21 @@ class BaseAction(object):
             return True
 
     def parse_action_repo(self, elem):
-        repo_elem = elem.find("repository")
-        repo = Repo.from_xml(repo_elem)
-        self.repo = repo
+        repo_els = elem.findall("repository")
+        repos = []
+        assert repo_els is not None
+        for repo in repo_els:
+            repos.append(Repo.from_xml(repo))
+        self.repos = repos
 
     def parse_package_elems(self, elem):
         package_els = elem.findall("package")
         packages = []
         assert package_els is not None
         for package_el in package_els:
-            packages.append(package_el.text)
+            prop = {'url': package_el.text}
+            prop.update(package_el.attrib)
+            packages.append(prop)
         self.packages = packages
 
     @classmethod
@@ -367,6 +409,7 @@ class BaseAction(object):
         ``env.sh`` respectively).
         """
         raise NotImplementedError("No to_bash defined for %r" % self)
+
 
 
 def _tar_folders(filename):
@@ -408,8 +451,7 @@ def _cache_download(url, filename):
     if not os.path.isfile(local):
         # Must download it...
         try:
-            import sys  # TODO - log this nicely...
-            sys.stderr.write("Downloading %s\n" % url)
+            #info("Downloading %s" % url)
             urlretrieve(url, local)
         except URLError:
             # Most likely server is down, could be bad URL in XML action:
@@ -476,6 +518,24 @@ def _determine_compressed_file_folder(url, downloaded_filename):
 
     return answer
 
+def remove_export_commands(command):
+    cleaned_command = []
+    for line in command.split('\n'):
+        line = line.strip()
+        for token in re.split('&&|;\s', line):
+            token = token.strip()
+            if not token or token.startswith('export'):
+                continue
+            cleaned_command.append(token)
+    return '\n'.join(cleaned_command)
+
+def _convert_to_conda_prefix(path):
+    if path.find('REPOSITORY_INSTALL_DIR') != -1:
+        raise NotImplementedError('REPOSITORY_INSTALL_DIR found, this needs to be ported')
+    if path.find('TMP_WORK_DIR') != -1:
+        raise NotImplementedError('TMP_WORK_DIR found, this needs to be ported')
+    return path.replace('$INSTALL_DIR', '$PREFIX')
+
 
 def _commands_to_download_and_extract(url, target_filename=None):
     # TODO - Include checksum validation here?
@@ -507,6 +567,12 @@ def _commands_to_download_and_extract(url, target_filename=None):
     answer.extend(_determine_compressed_file_folder(url, downloaded_filename))
     return answer, []
 
+def _create_test_help(binary):
+    # To get basic testing automatically done we assume that ever program that
+    # uses autotools and make do have a --help or -h argument
+    test_command = "%s -h &> /dev/null" % (binary)
+    return test_command
+
 
 class DownloadByUrlAction(BaseAction):
     action_type = "download_by_url"
@@ -514,6 +580,8 @@ class DownloadByUrlAction(BaseAction):
 
     def __init__(self, elem):
         self.url = elem.text.strip()
+        self.md5 = elem.attrib.get('md5sum', None)
+        self.sha256 = elem.attrib.get('sha256sum', None)
         assert self.url
 
     def to_bash(self):
@@ -522,6 +590,22 @@ class DownloadByUrlAction(BaseAction):
         # Do we need to worry about target_filename here?
         return _commands_to_download_and_extract(self.url)
 
+    def to_conda(self, meta, build):
+        # See class DownloadByUrl in Galaxy,
+        # lib/tool_shed/galaxy_install/tool_dependencies/recipe/step_handler.py
+        # Do we need to worry about target_filename in fn?
+
+        filename = self.url.split('/')[-1]
+        if not self.sha256 and not self.md5:
+            path = _cache_download(self.url, filename)
+            self.sha256 = subprocess.check_output(['sha256sum', path]).split()[0].strip()
+
+        meta['source']['url'] = self.url
+        meta['source']['fn'] = filename
+        if self.sha256:
+            meta['source']['sha256'] = self.sha256
+        if self.md5:
+            meta['source']['md5'] = self.md5
 
 class DownloadFileAction(BaseAction):
     action_type = "download_file"
@@ -536,6 +620,11 @@ class DownloadFileAction(BaseAction):
             return _commands_to_download_and_extract(self.url)
         else:
             return ['wget %s' % self.url], []
+
+    def to_conda(self, meta, build):
+        # $SRC_DIR is the source dir of conda. The directory where you would expect the Makefile
+        build.append("'wget %s $SRC_DIR' % self.url")
+
 
 
 class DownloadBinary(BaseAction):
@@ -557,6 +646,12 @@ class ShellCommandAction(BaseAction):
 
     def to_bash(self):
         return [self.command], []
+
+    def to_conda(self, meta, build):
+
+        command = remove_export_commands(self.command.strip())
+        command = _convert_to_conda_prefix(command)
+        build.append(command)
 
 
 class TemplateShellCommandAction(BaseAction):
@@ -581,6 +676,12 @@ class MoveFileAction(BaseAction):
     def to_bash(self):
         return ["mv %s %s" % (self.source, self.destination)], []
 
+    def to_conda(self, meta, build):
+        make_dir = "mkdir -p %s" % _convert_to_conda_prefix(self.destination)
+        if make_dir not in build:
+            build.append( make_dir )
+        build.append("mv %s %s" % (self.source, _convert_to_conda_prefix(self.destination)))
+
 
 class MoveDirectoryFilesAction(BaseAction):
     action_type = "move_directory_files"
@@ -594,6 +695,10 @@ class MoveDirectoryFilesAction(BaseAction):
 
     def to_bash(self):
         return ["mv %s/* %s/" % (self.source_directory, self.destination_directory)], []
+
+    def to_conda(self, meta, build):
+        build.append("mkdir -p %s" % _convert_to_conda_prefix(self.destination_directory))
+        build.append("mv %s/* %s/" % (self.source_directory, _convert_to_conda_prefix(self.destination_directory)))
 
 
 class SetEnvironmentAction(BaseAction):
@@ -624,6 +729,12 @@ class SetEnvironmentAction(BaseAction):
                 raise ValueError("Undefined environment variable action %r" % var.action)
         return answer, answer  # Actions needed in env.sh here!
 
+    def to_conda(self, meta, build):
+        """
+        Not needed for conda recipes
+        """
+        pass
+
 
 class ChmodAction(BaseAction):
     action_type = "chmod"
@@ -644,6 +755,9 @@ class ChmodAction(BaseAction):
     def to_bash(self):
         return ["chmod %s %s" % (m["mode"], m["target"]) for m in self.mods], []
 
+    def to_conda(self, meta, build):
+        build.extend(["chmod %s %s" % (m["mode"], m["target"]) for m in self.mods])
+
 
 class MakeInstallAction(BaseAction):
     action_type = "make_install"
@@ -654,6 +768,13 @@ class MakeInstallAction(BaseAction):
 
     def to_bash(self):
         return ["make install"], []
+
+    def to_conda(self, meta, build):
+        build.extend(['make', 'make install'])
+
+        test = _create_test_help(meta['package']['name'])
+        if test not in meta['test']['commands']:
+            meta['test']['commands'].append( test )
 
 
 class AutoconfAction(BaseAction):
@@ -668,6 +789,16 @@ class AutoconfAction(BaseAction):
             raise NotImplementedError("Options with action autoconf not implemented yet.")
         return ['./configure', 'make', 'make install'], []
 
+    def to_conda(self, meta, build):
+        configure = './configure --prefix=$PREFIX '
+        if self.options:
+            configure += self.options
+        build.extend([configure, 'make', 'make install'])
+
+        test = _create_test_help(meta['package']['name'])
+        if test not in meta['test']['commands']:
+            meta['test']['commands'].append( test )
+
 
 class ChangeDirectoryAction(BaseAction):
     action_type = "change_directory"
@@ -680,6 +811,9 @@ class ChangeDirectoryAction(BaseAction):
     def to_bash(self):
         return ["cd %s" % self.directory], []
 
+    def to_conda(self, meta, build):
+        build.append("cd %s" % self.directory)
+
 
 class MakeDirectoryAction(BaseAction):
     action_type = "make_directory"
@@ -691,6 +825,9 @@ class MakeDirectoryAction(BaseAction):
     def to_bash(self):
         return ["mkdir -p %s" % self.directory], []
 
+    def to_conda(self, meta, build):
+        build.append("mkdir -p %s" % _convert_to_conda_prefix(self.directory))
+
 
 class SetupPerlEnvironmentAction(BaseAction):
     action_type = "setup_perl_environment"
@@ -699,6 +836,29 @@ class SetupPerlEnvironmentAction(BaseAction):
     def __init__(self, elem):
         self.parse_action_repo(elem)
         self.parse_package_elems(elem)
+
+    def to_conda(self, meta, build):
+        # Bioconda naming schema
+        meta['package']['name'] = 'perl-' + meta['package']['name']
+
+        for repo in self.repos:
+            version_spec = '%s ==%s' % (repo.package_name, repo.package_version)
+            if not version_spec in meta['requirements']['build']:
+                meta['requirements']['build'].append(version_spec)
+            if not version_spec in meta['requirements']['run']:
+                meta['requirements']['run'].append( version_spec )
+            meta['requirements']['build'].extend(['perl-app-cpanminus', 'perl-module-build'])
+        for package in self.packages:
+            build.append( 'wget %s' % package )
+            filename = package['url'].split('/')[-1]
+            if 'sha256sum' in package:
+                checksum = package['sha256sum']
+            else:
+                path = _cache_download(package['url'], filename)
+                checksum = subprocess.check_output(['sha256sum', path]).split()[0].strip()
+            # verify download
+            build.append( """sha256sum %s | awk '{ if ($1 == "%s") exit 0; else exit 1}'""" % (filename, checksum) )
+            build.append( 'cpanm -i --notest %s' % package['url'].split('/')[-1] )
 
 
 class SetupRubyEnvironmentAction(BaseAction):
@@ -709,6 +869,31 @@ class SetupRubyEnvironmentAction(BaseAction):
         self.parse_action_repo(elem)
         self.parse_package_elems(elem)
 
+    def to_conda(self, meta, build):
+        # Add test - this needs probably manual tweaking as the package name is lower letter and R modules are not
+        meta['test']['commands'].append( 'ruby --help' )
+        # Bioconda naming schema
+        meta['package']['name'] = 'ruby-' + meta['package']['name']
+
+        for repo in self.repos:
+            version_spec = '%s ==%s' % (repo.package_name, repo.package_version)
+            if not version_spec in meta['requirements']['build']:
+                meta['requirements']['build'].append(version_spec)
+            if not version_spec in meta['requirements']['run']:
+                meta['requirements']['run'].append( version_spec )
+
+        for package in self.packages:
+            build.append( 'wget %s' % package )
+            filename = package['url'].split('/')[-1]
+            if 'sha256sum' in package:
+                checksum = package['sha256sum']
+            else:
+                path = _cache_download(package['url'], filename)
+                checksum = subprocess.check_output(['sha256sum', path]).split()[0].strip()
+            # verify download
+            build.append( """sha256sum %s | awk '{ if ($1 == "%s") exit 0; else exit 1}'""" % (filename, checksum) )
+            build.append( 'gem install --local %s' % filename )
+
 
 class SetupPythonEnvironmentAction(BaseAction):
     action_type = "setup_python_environment"
@@ -717,6 +902,42 @@ class SetupPythonEnvironmentAction(BaseAction):
     def __init__(self, elem):
         self.parse_action_repo(elem)
         self.parse_package_elems(elem)
+
+    def to_conda(self, meta, build):
+        # Add tests
+        del meta['test']['commands']
+        meta['test']['imports'] = '%s' % meta['package']['name']
+
+
+        for repo in self.repos:
+            version_spec = '%s ==%s' % (repo.package_name.lower(), repo.package_version)
+            if not version_spec in meta['requirements']['build']:
+                meta['requirements']['build'].append(version_spec)
+            if not version_spec in meta['requirements']['run']:
+                meta['requirements']['run'].append( version_spec )
+
+        if len(self.packages) > 1:
+            for package in self.packages:
+                package_name = '-'.join( package['url'].split('/')[-1].split('-')[0:-1] ).lower()
+                package_version = package['url'].split('/')[-1].split('-')[-1].replace('.tar.gz', '').replace('.tar.bz2', '').replace('.zip','').replace('.tgz', '')
+                meta['requirements']['build'].append('%s ==%s' % (package_name, package_version))
+                meta['requirements']['run'].append('%s ==%s' % (package_name, package_version))
+        else:
+            package = self.packages[0]
+
+        filename = package['url'].split('/')[-1]
+        if 'sha256sum' in package:
+            checksum = package['sha256sum']
+        else:
+            path = _cache_download(package['url'], filename)
+            checksum = subprocess.check_output(['sha256sum', path]).split()[0].strip()
+        build.append("$PYTHON setup.py install")
+
+        # use last package as package url and fn, to make conda happy
+        meta['source']['url'] = package['url']
+        meta['source']['fn'] = filename
+        meta['source']['sha256'] = checksum
+
 
 
 class SetupVirtualenvAction(BaseAction):
@@ -738,6 +959,63 @@ class SetupREnvironmentAction(BaseAction):
         self.parse_action_repo(elem)
         self.parse_package_elems(elem)
 
+    def to_conda(self, meta, build):
+        # Add test - this needs probably manual tweaking as the package name is lower letter and R modules are not
+        meta['test']['files'] = ['test.sh']
+        meta['test']['commands'].append( "sh test.sh %s" % meta['package']['name'] )
+
+        # Bioconda naming schema, assuming most of our packages are bioconductor onces
+        meta['package']['name'] = 'bioconductor-' + meta['package']['name']
+        # special R treatment
+        meta['build']['rpaths'] = ['lib/R/lib/','lib/']
+
+        for repo in self.repos:
+            version_spec = '%s ==%s' % (repo.package_name.lower(), repo.package_version)
+            if not version_spec in meta['requirements']['build']:
+                meta['requirements']['build'].append(version_spec)
+            if not version_spec in meta['requirements']['run']:
+                meta['requirements']['run'].append( version_spec )
+
+        if len(self.packages) > 1:
+            for package in self.packages:
+                filename = package['url'].split('/')[-1]
+                build.append( 'wget --no-check-certificate %s' % package['url'] )
+                if 'sha256sum' in package:
+                    checksum = package['sha256sum']
+                else:
+                    path = _cache_download(package['url'], filename)
+                    checksum = subprocess.check_output(['sha256sum', path]).split()[0].strip()
+                # verify download
+                build.append( """sha256sum %s | awk '{ if ($1 == "%s") exit 0; else exit 1}'""" % (filename, checksum) )
+                subpackage_name = filename.split('_')[0]
+                #build.append( '$R CMD INSTALL --build %s' % filename )
+                build.append("tar xfz %s" % filename)
+                build.append("cd %s" % subpackage_name)
+                build.append("mv DESCRIPTION DESCRIPTION.old")
+                build.append("grep -v '^Priority: ' DESCRIPTION.old > DESCRIPTION")
+                build.append('$R CMD INSTALL --build .')
+                build.append('cd .. && rm %s -rf' % subpackage_name)
+                build.append('')
+        else:
+            package = self.packages[0]
+            filename = package['url'].split('/')[-1]
+            build.append( 'wget --no-check-certificate %s' % package['url'] )
+            if 'sha256sum' in package:
+                checksum = package['sha256sum']
+            else:
+                path = _cache_download(package['url'], filename)
+                checksum = subprocess.check_output(['sha256sum', path]).split()[0].strip()
+
+            build.append( 'mv DESCRIPTION DESCRIPTION.old' )
+            build.append("grep -v '^Priority: ' DESCRIPTION.old > DESCRIPTION")
+            build.append('$R CMD INSTALL --build .')
+            build.append('')
+
+        # use last package as package url and fn, to make conda happy
+        meta['source']['url'] = package['url']
+        meta['source']['fn'] = filename
+        meta['source']['sha256'] = checksum
+
 
 class SetEnvironmentForInstallAction(BaseAction):
     action_type = "set_environment_for_install"
@@ -748,6 +1026,11 @@ class SetEnvironmentForInstallAction(BaseAction):
     def to_bash(self):
         # TODO - How could we resolve/check the dependencies?
         return ['echo "WARNING: Assuming packages already installed!"'], []
+
+    def to_conda(self, meta, build):
+        # TODO - How could we resolve/check the dependencies?
+        #return ['echo "WARNING: Assuming packages already installed!"'], []
+        pass
 
 
 class SetVariable(object):
