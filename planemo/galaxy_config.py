@@ -14,6 +14,7 @@ from six.moves.urllib.request import urlretrieve
 import click
 
 from planemo import galaxy_run
+from planemo.conda import build_conda_context
 from planemo.io import warn
 from planemo.io import shell
 from planemo.io import shell_join
@@ -136,8 +137,10 @@ def galaxy_config(ctx, tool_paths, for_tests=False, **kwds):
         config_directory = mkdtemp()
     try:
         latest_galaxy = False
+        install_env = {}
         if install_galaxy:
-            _install_galaxy(ctx, config_directory, kwds)
+            _build_eggs_cache(ctx, install_env, kwds)
+            _install_galaxy(ctx, config_directory, install_env, kwds)
             latest_galaxy = True
             galaxy_root = config_join("galaxy-dev")
 
@@ -208,6 +211,7 @@ def galaxy_config(ctx, tool_paths, for_tests=False, **kwds):
             log_level="${log_level}",
             debug="${debug}",
             watch_tools="auto",
+            default_job_shell="/bin/bash",  # For conda dependency resolution
             tool_data_table_config_path=tool_data_table,
             integrated_tool_panel_config=("${temp_directory}/"
                                           "integrated_tool_panel_conf.xml"),
@@ -235,8 +239,7 @@ def galaxy_config(ctx, tool_paths, for_tests=False, **kwds):
         # retry_job_output_collection = 0
 
         env = _build_env_for_galaxy(properties, template_args)
-        if install_galaxy:
-            _build_eggs_cache(ctx, env, kwds)
+        env.update(install_env)
         _build_test_env(properties, env)
         env['GALAXY_TEST_SHED_TOOL_CONF'] = shed_tool_conf
 
@@ -534,25 +537,25 @@ def _shed_tool_conf(install_galaxy, config_directory):
     return os.path.join(config_dir, "shed_tool_conf.xml")
 
 
-def _install_galaxy(ctx, config_directory, kwds):
+def _install_galaxy(ctx, config_directory, env, kwds):
     if not kwds.get("no_cache_galaxy", False):
-        _install_galaxy_via_git(ctx, config_directory, kwds)
+        _install_galaxy_via_git(ctx, config_directory, env, kwds)
     else:
-        _install_galaxy_via_download(ctx, config_directory, kwds)
+        _install_galaxy_via_download(ctx, config_directory, env, kwds)
 
 
-def _install_galaxy_via_download(ctx, config_directory, kwds):
+def _install_galaxy_via_download(ctx, config_directory, env, kwds):
     branch = _galaxy_branch(kwds)
     tar_cmd = "tar -zxvf %s" % branch
     command = galaxy_run.DOWNLOAD_GALAXY + "; %s | tail" % tar_cmd
-    _install_with_command(ctx, config_directory, command, kwds)
+    _install_with_command(ctx, config_directory, command, env, kwds)
 
 
-def _install_galaxy_via_git(ctx, config_directory, kwds):
+def _install_galaxy_via_git(ctx, config_directory, env, kwds):
     gx_repo = _ensure_galaxy_repository_available(ctx, kwds)
     branch = _galaxy_branch(kwds)
     command = git.command_clone(ctx, gx_repo, "galaxy-dev", branch=branch)
-    _install_with_command(ctx, config_directory, command, kwds)
+    _install_with_command(ctx, config_directory, command, env, kwds)
 
 
 def _build_eggs_cache(ctx, env, kwds):
@@ -587,7 +590,7 @@ def _galaxy_source(kwds):
     return source
 
 
-def _install_with_command(ctx, config_directory, command, kwds):
+def _install_with_command(ctx, config_directory, command, env, kwds):
     # TODO: --watchdog
     pip_installs = []
     if kwds.get("cwl", False):
@@ -606,7 +609,7 @@ def _install_with_command(ctx, config_directory, command, kwds):
         galaxy_run.setup_common_startup_args(),
         COMMAND_STARTUP_COMMAND,
     )
-    shell(install_cmd)
+    shell(install_cmd, env=env)
 
 
 def _ensure_galaxy_repository_available(ctx, kwds):
@@ -678,14 +681,21 @@ def _handle_dependency_resolution(config_directory, kwds):
         'conda_auto_install': False,
         'conda_ensure_channels': '',
     }
-
     attributes = []
-    for key, default_value in dependency_attribute_kwds.iteritems():
+
+    def add_attribute(key, value):
+        attributes.append('%s="%s"' % (key, value))
+
+    for key, default_value in iteritems(dependency_attribute_kwds):
         value = kwds.get(key, default_value)
         if value != default_value:
             # Strip leading prefix (conda_) off attributes
             attribute_key = "_".join(key.split("_")[1:])
-            attributes.append('%s="%s"' % (attribute_key, value))
+            add_attribute(attribute_key, value)
+
+    if "prefix" not in attributes:
+        conda_context = build_conda_context(**kwds)
+        add_attribute("prefix", conda_context.conda_prefix)
 
     attribute_str = " ".join(attributes)
 
