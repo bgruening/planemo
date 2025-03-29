@@ -3,7 +3,6 @@
 import os
 import sys
 import tempfile
-import time
 import traceback
 from datetime import datetime
 from typing import (
@@ -42,6 +41,12 @@ from planemo.galaxy.api import (
     retry_on_timeouts,
     summarize_history,
 )
+from planemo.galaxy.invocations.api import BioblendInvocationApi
+from planemo.galaxy.invocations.polling import (
+    PollingTrackerImpl,
+)
+from planemo.galaxy.invocations.polling import wait_for_invocation_and_jobs as polling_wait_for_invocation_and_jobs
+from planemo.galaxy.invocations.progress import WorkflowProgressDisplay
 from planemo.io import wait_on
 from planemo.runnable import (
     ErrorRunResponse,
@@ -770,58 +775,15 @@ def _history_id(gi, **kwds) -> str:
 def wait_for_invocation_and_jobs(
     ctx, invocation_id: str, history_id: str, user_gi: GalaxyInstance, polling_backoff: int
 ):
-    ctx.vlog("Waiting for invocation [%s]" % invocation_id)
-    final_invocation_state = "new"
-
-    # TODO: hook in invocation["messages"]
-    error_message = ""
-    job_state = "ok"
-    try:
-        final_invocation_state = _wait_for_invocation(ctx, user_gi, invocation_id, polling_backoff)
-        assert final_invocation_state == "scheduled"
-    except Exception as e:
-        ctx.vlog(f"Problem waiting on invocation: {str(e)}")
-        summarize_history(ctx, user_gi, history_id)
-        error_message = f"Final state of invocation {invocation_id} is [{final_invocation_state}]"
-
-    ctx.vlog(f"Final state of invocation {invocation_id} is [{final_invocation_state}]")
-
-    job_state = _wait_for_invocation_jobs(ctx, user_gi, invocation_id, polling_backoff)
-    if job_state not in ("ok", "skipped"):
-        msg = f"Failed to run workflow, at least one job is in [{job_state}] state."
-        error_message = msg if not error_message else f"{error_message}. {msg}"
-    else:
-        # wait for possible subworkflow invocations
-        invocation = user_gi.invocations.show_invocation(invocation_id)
-        for step in invocation["steps"]:
-            if step.get("subworkflow_invocation_id") is not None:
-                final_invocation_state, job_state, error_message = wait_for_invocation_and_jobs(
-                    ctx,
-                    invocation_id=step["subworkflow_invocation_id"],
-                    history_id=history_id,
-                    user_gi=user_gi,
-                    polling_backoff=polling_backoff,
-                )
-                if final_invocation_state != "scheduled" or job_state not in ("ok", "skipped"):
-                    return final_invocation_state, job_state, error_message
-
-        ctx.vlog(f"The final state of all jobs and subworkflow invocations for invocation [{invocation_id}] is 'ok'")
-    return final_invocation_state, job_state, error_message
-
-
-def _wait_for_invocation(ctx, gi, invocation_id, polling_backoff=0):
-    def state_func():
-        return retry_on_timeouts(ctx, gi, lambda gi: gi.invocations.show_invocation(invocation_id))
-
-    return _wait_on_state(state_func, polling_backoff)
-
-
-def has_jobs_in_states(ctx, gi, history_id, states):
-    params = {"history_id": history_id}
-    jobs_url = gi.url + "/jobs"
-    jobs = gi.jobs._get(url=jobs_url, params=params)
-    target_jobs = [j for j in jobs if j["state"] in states]
-    return len(target_jobs) > 0
+    polling_tracker = PollingTrackerImpl(polling_backoff)
+    invocation_api = BioblendInvocationApi(ctx, user_gi)
+    with WorkflowProgressDisplay(invocation_id) as workflow_progress_display:
+        final_invocation_state, job_state, error_message = polling_wait_for_invocation_and_jobs(
+            ctx, invocation_id, invocation_api, polling_tracker, workflow_progress_display
+        )
+        if error_message:
+            summarize_history(ctx, user_gi, history_id)
+        return final_invocation_state, job_state, error_message
 
 
 def _wait_for_history(ctx, gi, history_id, polling_backoff=0):
@@ -831,19 +793,6 @@ def _wait_for_history(ctx, gi, history_id, polling_backoff=0):
 
     def state_func():
         return retry_on_timeouts(ctx, gi, lambda gi: gi.histories.show_history(history_id))
-
-    return _wait_on_state(state_func, polling_backoff)
-
-
-def _wait_for_invocation_jobs(ctx, gi, invocation_id, polling_backoff=0):
-    # Wait for invocation jobs to finish. Less brittle than waiting for a history to finish,
-    # as you could have more than one invocation in a history, or an invocation without
-    # steps that produce history items.
-
-    ctx.log(f"waiting for invocation {invocation_id}")
-
-    def state_func():
-        return retry_on_timeouts(ctx, gi, lambda gi: gi.jobs.get_jobs(invocation_id=invocation_id))
 
     return _wait_on_state(state_func, polling_backoff)
 
