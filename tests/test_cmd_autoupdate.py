@@ -32,9 +32,10 @@ def create_tmp_test_tool_file(tool_version):
     </requirements>
 </tool>
     """
-    with tempfile.TemporaryDirectory() as tempdir, tempfile.NamedTemporaryFile(
-        suffix=".xml", mode="w", dir=tempdir
-    ) as t:
+    with (
+        tempfile.TemporaryDirectory() as tempdir,
+        tempfile.NamedTemporaryFile(suffix=".xml", mode="w", dir=tempdir) as t,
+    ):
         t.write(xml_str)
         t.flush()
         yield os.path.realpath(t.name)
@@ -91,9 +92,10 @@ class CmdAutoupdateTestCase(CliTestCase):
     @skip_if_environ("PLANEMO_SKIP_GALAXY_TESTS")
     def test_autoupdate_multiple_workflows(self):
         """Test autoupdate command for a workflow is needed."""
-        with self._isolate_with_test_data("wf_repos/autoupdate_tests") as f, tempfile.TemporaryDirectory(
-            dir=f, prefix="autoupdate_test"
-        ) as isolated_dir:
+        with (
+            self._isolate_with_test_data("wf_repos/autoupdate_tests") as f,
+            tempfile.TemporaryDirectory(dir=f, prefix="autoupdate_test") as isolated_dir,
+        ):
             source_file = os.path.join(f, "diff-refactor-test.ga")
             # We update identical workflows in the same autoupdate call,
             # both workflows must be updated.
