@@ -80,7 +80,6 @@ isort = true
 [tool.ruff]
 # Match flake8 configuration from setup.cfg
 line-length = 120  # Match black configuration
-target-version = "py39"
 exclude = [
     ".eggs",
     ".git",
