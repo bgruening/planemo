@@ -149,14 +149,18 @@ def _validate_http_url(url, lint_ctx, user_agent=None):
         next(r.iter_content(1000))
         return True
     except Exception as e:
-        if r is not None and r.status_code == 429:
-            # too many requests
-            return True
-        elif r is not None and r.status_code in [403, 503] and "cloudflare" in r.text:
-            # CloudFlare protection block
-            return True
+        if r is not None:
+            if r.status_code == 429:
+                # too many requests
+                return True
+            elif r.status_code in [403, 503] and "cloudflare" in r.text:
+                # CloudFlare protection block
+                return True
+            else:
+                lint_ctx.error(f"Error '{e}' accessing {url} response was {r.text}")
+                return False
         else:
-            lint_ctx.error(f"Error '{e}' accessing {url} response was {r.text}")
+            lint_ctx.error(f"Error '{e}' accessing {url}")
             return False
 
 
