@@ -23,13 +23,12 @@ classifiers = [
     "Topic :: Software Development :: Testing",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
+requires-python = ">=3.10"
 
 [tool.setuptools]
 packages = [
@@ -74,7 +73,6 @@ planemo = "planemo.cli:planemo"
 extend-exclude = '^/(docs/standards)/'
 include = '\.pyi?$'
 line-length = 120
-target-version = ['py37']
 
 [tool.darker]
 isort = true
@@ -82,7 +80,6 @@ isort = true
 [tool.ruff]
 # Match flake8 configuration from setup.cfg
 line-length = 120  # Match black configuration
-target-version = "py37"
 exclude = [
     ".eggs",
     ".git",

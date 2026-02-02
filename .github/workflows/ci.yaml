@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9']
+        python-version: ['3.10']
         tox-action:
           - lint
           - lint_docs
@@ -36,11 +36,11 @@ jobs:
           - unit-nonredundant-noclientbuild-noshed-nogx
           - unit-diagnostic-serveclientcmd
         include:
-          - python-version: '3.12'
+          - python-version: '3.13'
             tox-action: lint
-          - python-version: '3.12'
+          - python-version: '3.13'
             tox-action: mypy
-          - python-version: '3.12'
+          - python-version: '3.13'
             tox-action: unit-quick
     services:
       postgres:
@@ -90,7 +90,7 @@ jobs:
           node-version: '18.12.1'
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.14'
+          python-version: '3.13'
           cache: pip
       - name: Install dependencies
         run: |
