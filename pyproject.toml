@@ -73,7 +73,6 @@ planemo = "planemo.cli:planemo"
 extend-exclude = '^/(docs/standards)/'
 include = '\.pyi?$'
 line-length = 120
-target-version = ['py39']
 
 [tool.darker]
 isort = true
