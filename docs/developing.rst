@@ -6,6 +6,7 @@ This page describes the process of releasing new versions of Planemo.
 
 * Review ``git status`` for missing files.
 * Verify the latest github workflows pass.
+* Make sure that the `.venv` exists and contains the latest dev-requirements ``make setup-venv``
 * Ensure the target release is set correctly in ``planemo/__init__.py`` (
   ``version`` will be a ``devN`` variant of target release).
 * Update ``HISTORY.rst`` with the help of ``make add-history`` ``scripts/bootstrap_history.py``

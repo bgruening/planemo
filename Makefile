@@ -55,7 +55,7 @@ install: submodule ## install into Python envirnoment
 	pip install . && cd cwl-runner && pip install .
 
 setup-venv: ## setup a development virtualenv in current directory
-	if [ ! -d $(VENV) ]; then python -venv $(VENV); exit; fi;
+	if [ ! -d $(VENV) ]; then python -m venv $(VENV); exit; fi;
 	$(IN_VENV) pip install --upgrade pip && pip install -r dev-requirements.txt -r requirements.txt
 
 setup-git-hook-lint: ## setup precommit hook for linting project
@@ -173,7 +173,9 @@ push-release: ## Push a tagged release to github
 
 release: release-local check-dist push-release ## package, review, and upload a release
 
-add-history: ## Reformat HISTORY.rst with data from Github's API
+## Reformat HISTORY.rst with data from Github's API
+add-history:
+	$(IN_VENV) pip install . --no-deps
 	$(IN_VENV) python $(BUILD_SCRIPTS_DIR)/bootstrap_history.py --acknowledgements
 
 update-extern: ## update external artifacts copied locally
