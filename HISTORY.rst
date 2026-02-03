@@ -6,8 +6,18 @@ History
 .. to_doc
 
 ---------------------
-0.75.36.dev0
+0.75.37.dev0
 ---------------------
+
+    
+---------------------
+0.75.36 (2026-02-03)
+---------------------
+* Add new pangenomics category (thanks to `@SaimMomin12`_). `Pull Request 1603`_
+* Fix exception handling in case of ReadTimeout errors (thanks to `@nsoranzo`_). `Pull Request 1606`_
+* Apply new black formatting (thanks to `@mvdbeek`_). `Pull Request 1605`_
+* Fix error in reports macro file (thanks to `@bernt-matthias`_). `Pull Request 1604`_
+* Add linter checking remote_repository_url (thanks to `@bernt-matthias`_). `Pull Request 1581`_
 
 ---------------------
 0.75.35 (2026-01-21)
@@ -2314,6 +2324,11 @@ History
   tools - and more experimental features involving Docker and Homebrew. 7d07782_
 
 .. github_links
+.. _Pull Request 1603: https://github.com/galaxyproject/planemo/pull/1603
+.. _Pull Request 1606: https://github.com/galaxyproject/planemo/pull/1606
+.. _Pull Request 1605: https://github.com/galaxyproject/planemo/pull/1605
+.. _Pull Request 1604: https://github.com/galaxyproject/planemo/pull/1604
+.. _Pull Request 1581: https://github.com/galaxyproject/planemo/pull/1581
 .. _Pull Request 1601: https://github.com/galaxyproject/planemo/pull/1601
 .. _Pull Request 1599: https://github.com/galaxyproject/planemo/pull/1599
 .. _Pull Request 1598: https://github.com/galaxyproject/planemo/pull/1598
