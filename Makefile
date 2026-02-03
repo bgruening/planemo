@@ -15,13 +15,13 @@ UPSTREAM?=galaxyproject
 SOURCE_DIR?=planemo
 SOURCE_DOC_EXCLUDE=$(SOURCE_DIR)/cwl/cwl2script
 BUILD_SCRIPTS_DIR=scripts
-VERSION?=$(shell python $(BUILD_SCRIPTS_DIR)/print_version_for_release.py $(SOURCE_DIR))
+VERSION?=$(shell python3 $(BUILD_SCRIPTS_DIR)/print_version_for_release.py $(SOURCE_DIR))
 DOC_URL?=https://planemo.readthedocs.org
 PROJECT_URL?=https://github.com/galaxyproject/planemo
 PROJECT_NAME?=planemo
 TEST_DIR?=tests
 DOCS_DIR?=docs
-BUILD_SLIDESHOW?=$(IN_VENV) python $(BUILD_SCRIPTS_DIR)/build_slideshow.py
+BUILD_SLIDESHOW?=$(IN_VENV) python3 $(BUILD_SCRIPTS_DIR)/build_slideshow.py
 SLIDESHOW_TO_PDF?=bash -c 'docker run --rm -v `pwd`:/cwd astefanutti/decktape /cwd/$$0 /cwd/`dirname $$0`/`basename -s .html $$0`.pdf'
 
 .PHONY: clean-pyc clean-build docs clean
@@ -55,7 +55,7 @@ install: submodule ## install into Python envirnoment
 	pip install . && cd cwl-runner && pip install .
 
 setup-venv: ## setup a development virtualenv in current directory
-	if [ ! -d $(VENV) ]; then python -m venv $(VENV); exit; fi;
+	if [ ! -d $(VENV) ]; then python3 -m venv $(VENV); exit; fi;
 	$(IN_VENV) pip install --upgrade pip && pip install -r dev-requirements.txt -r requirements.txt
 
 setup-git-hook-lint: ## setup precommit hook for linting project
@@ -107,7 +107,7 @@ ready-docs:  ## rebuild docs folder ahead of running docs or lint-docs
 	$(BUILD_SLIDESHOW) 'Galaxy Tool Framework Changes' $(DOCS_DIR)/galaxy_changelog.md
 	$(BUILD_SLIDESHOW) 'Planemo: A Scientific Workflow SDK' $(DOCS_DIR)/presentations/2016_workflows.md
 	$(IN_VENV) sphinx-apidoc -f -o $(DOCS_DIR)/ $(SOURCE_DIR) $(SOURCE_DOC_EXCLUDE)
-	$(IN_VENV) python scripts/commands_to_rst.py
+	$(IN_VENV) python3 scripts/commands_to_rst.py
 
 docs: ready-docs ## generate Sphinx HTML documentation, including API docs
 	$(IN_VENV) $(MAKE) -C $(DOCS_DIR) clean
@@ -115,7 +115,7 @@ docs: ready-docs ## generate Sphinx HTML documentation, including API docs
 
 lint-docs: ready-docs
 	$(IN_VENV) $(MAKE) -C $(DOCS_DIR) clean
-	$(IN_VENV) $(MAKE) -C $(DOCS_DIR) html 2>&1 | python $(BUILD_SCRIPTS_DIR)/lint_sphinx_output.py
+	$(IN_VENV) $(MAKE) -C $(DOCS_DIR) html 2>&1 | python3 $(BUILD_SCRIPTS_DIR)/lint_sphinx_output.py
 
 _open-docs:
 	$(OPEN_RESOURCE) $(DOCS_DIR)/_build/html/index.html
@@ -140,7 +140,7 @@ open-project: ## open project on github
 check-dist: clean-build dist clean-build
 
 dist: clean submodule ## create and check packages
-	$(IN_VENV) python -m build
+	$(IN_VENV) python3 -m build
 	$(IN_VENV) twine check dist/*
 	ls -l dist
 
@@ -157,10 +157,10 @@ release-artifacts: release-test-artifacts ## Package and Upload to PyPi
 	$(IN_VENV) twine upload dist/*
 
 commit-version: ## Update version and history, commit and add tag
-	$(IN_VENV) python $(BUILD_SCRIPTS_DIR)/commit_version.py $(SOURCE_DIR) $(VERSION)
+	$(IN_VENV) python3 $(BUILD_SCRIPTS_DIR)/commit_version.py $(SOURCE_DIR) $(VERSION)
 
 new-version: ## Mint a new version
-	$(IN_VENV) python $(BUILD_SCRIPTS_DIR)/new_version.py $(SOURCE_DIR) --patch
+	$(IN_VENV) python3 $(BUILD_SCRIPTS_DIR)/new_version.py $(SOURCE_DIR) --patch
 
 release-local: commit-version new-version
 
@@ -176,7 +176,7 @@ release: release-local check-dist push-release ## package, review, and upload a 
 ## Reformat HISTORY.rst with data from Github's API
 add-history:
 	$(IN_VENV) pip install . --no-deps
-	$(IN_VENV) python $(BUILD_SCRIPTS_DIR)/bootstrap_history.py --acknowledgements
+	$(IN_VENV) python3 $(BUILD_SCRIPTS_DIR)/bootstrap_history.py --acknowledgements
 
 update-extern: ## update external artifacts copied locally
 	sh scripts/update_extern.sh
