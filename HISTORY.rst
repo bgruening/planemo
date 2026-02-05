@@ -6,11 +6,6 @@ History
 .. to_doc
 
 ---------------------
-0.75.37.dev0
----------------------
-
-    
----------------------
 0.75.36 (2026-02-03)
 ---------------------
 * Add new pangenomics category (thanks to `@SaimMomin12`_). `Pull Request 1603`_
