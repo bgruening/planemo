@@ -173,8 +173,7 @@ push-release: ## Push a tagged release to github
 
 release: release-local check-dist push-release ## package, review, and upload a release
 
-## Reformat HISTORY.rst with data from Github's API
-add-history:
+add-history: ## Reformat HISTORY.rst with data from Github's API
 	$(IN_VENV) pip install . --no-deps
 	$(IN_VENV) python3 $(BUILD_SCRIPTS_DIR)/bootstrap_history.py --acknowledgements
 
