@@ -6,7 +6,7 @@ History
 .. to_doc
 
 ---------------------
-0.75.37.dev0
+0.75.37 (2026-02-06)
 ---------------------
 * Move deploy to a separate workflow for trusted publishing (thanks to `@nsoranzo`_). `Pull Request 1608`_
 * Finish release and fix release process (thanks to `@bernt-matthias`_). `Pull Request 1607`_
