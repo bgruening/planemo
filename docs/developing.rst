@@ -11,8 +11,8 @@ This page describes the process of releasing new versions of Planemo.
   ``version`` will be a ``devN`` variant of target release).
 * Update ``HISTORY.rst`` with the help of ``make add-history`` ``scripts/bootstrap_history.py``
 * ``make open-docs`` and review changelog.
-* ``make clean && make lint && make test``
-* Commit outstanding changes.
+* ``make clean && make lint``
+* Review and commit outstanding changes.
 * Update version and history, commit, add tag, mint a new version and push
   everything upstream with ``make release``
 * The new tag should automatically push the new release to PyPI via the
