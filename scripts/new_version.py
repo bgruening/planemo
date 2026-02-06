@@ -96,7 +96,7 @@ class VersionBumper:
 {new_version}.dev0
 ---------------------
 
-    """
+"""
 
         updated_content = history_content.replace(to_doc_marker, to_doc_marker + new_section)
 
