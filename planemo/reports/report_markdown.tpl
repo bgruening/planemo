@@ -60,6 +60,20 @@
       ```
 {%       endif %}
 {%       if test.data.job %}
+{%         set ns = namespace(container_id=None) %}
+{%         set job_metrics = test.data.job.get('job_metrics') or [] %}
+{%         for metric in job_metrics %}
+{%           if metric.get('name') == 'container_id' %}
+{%             set ns.container_id = metric.get('value') %}
+{%           endif %}
+{%         endfor %}
+{%         if ns.container_id %}
+    **Container:**
+
+    * ```console
+      {{ ns.container_id|indent(6) }}
+      ```
+{%         endif %}
 {%         for key, description in display_job_attributes.items() %}
 {%           if test.data.job[key] not in ("", None) %}
     **{{ description }}:**
