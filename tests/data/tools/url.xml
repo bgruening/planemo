@@ -24,8 +24,8 @@
     <help>
 These should work:
 
-http://example.org/
-https://example.org/
+http://galaxyproject.org/
+https://galaxyproject.org/
 
 And these should not be fetched (or will throw an error if they are):
 
