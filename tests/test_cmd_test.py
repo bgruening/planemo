@@ -136,6 +136,24 @@ class CmdTestTestCase(CliTestCase):
                     "Timed out after" in tool_test_json["tests"][0]["data"]["output_problems"][0]
                 ), "Time out did not happen"
 
+    @skip_if_environ("PLANEMO_SKIP_GALAXY_TESTS")
+    def test_test_index(self):
+        """Test --test_index selects a single test from a tool with two tests."""
+        with self._isolate(), NamedTemporaryFile(prefix="test_index_json") as json_out:
+            test_artifact = os.path.join(TEST_TOOLS_DIR, "two_tests.xml")
+            test_command = self._test_command("--test_output_json", json_out.name)
+            test_command = self.append_profile_argument_if_needed(test_command)
+            test_command += [
+                "--no_dependency_resolution",
+                "--test_index",
+                "0",
+                test_artifact,
+            ]
+            self._check_exit_code(test_command, exit_code=0)
+            with open(json_out.name) as fh:
+                tool_test_json = json.load(fh)
+                assert tool_test_json["summary"]["num_tests"] == 1
+
     @skip("Configuring quay.io/bgruening/galaxy:latest is currently broken")
     @skip_if_environ("PLANEMO_SKIP_GALAXY_TESTS")
     def test_workflow_test_simple_yaml_dockerized(self):
