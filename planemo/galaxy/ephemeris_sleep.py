@@ -21,6 +21,7 @@ except ImportError:
     get_common_args = None
 
 DEFAULT_SLEEP_WAIT = 1
+CONNECT_TIMEOUT = 0.5
 
 
 def _parser():
@@ -60,7 +61,7 @@ def sleep(galaxy_url, verbose=False, timeout=0, sleep_condition=None):
     count = 0
     while sleep_condition.sleep:
         try:
-            result = requests.get(galaxy_url + "/api/version")
+            result = requests.get(galaxy_url + "/api/version", timeout=CONNECT_TIMEOUT)
             try:
                 result = result.json()
                 if verbose:
@@ -71,7 +72,7 @@ def sleep(galaxy_url, verbose=False, timeout=0, sleep_condition=None):
                 if verbose:
                     sys.stdout.write("[%02d] No valid json returned... %s\n" % (count, result.__str__()))
                     sys.stdout.flush()
-        except requests.exceptions.ConnectionError as e:
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             if verbose:
                 sys.stdout.write("[%02d] Galaxy not up yet... %s\n" % (count, unicodify(e)[:100]))
                 sys.stdout.flush()
