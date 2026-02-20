@@ -13,6 +13,7 @@ h5py
 jinja2
 lxml
 oyaml
+packaging
 pathvalidate
 pyyaml
 ruamel.yaml

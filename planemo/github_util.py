@@ -6,8 +6,8 @@ import stat
 import tarfile
 import tempfile
 import time
-from distutils.dir_util import copy_tree
 from pathlib import Path
+from shutil import copytree
 
 import requests
 
@@ -114,7 +114,7 @@ def add_dir_contents_to_repo(
 ):
     ctx.log(f"From {from_dir} to {target_repository_path}")
     rm_dir_contents(target_repository_path)
-    copy_tree(from_dir, target_repository_path)
+    copytree(from_dir, target_repository_path, dirs_exist_ok=True)
     git.add(ctx, target_repository_path, target_repository_path)
     message = f"Update for version {version}"
     if notes:
