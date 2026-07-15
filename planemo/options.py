@@ -447,6 +447,41 @@ def shed_tools_directory_option():
     )
 
 
+def shed_tool_data_table_config_option():
+    return planemo_option(
+        "--shed_tool_data_table_config",
+        type=str,
+        help="Location of the shed tool data table config file for Galaxy "
+        "(records data tables registered by shed-installed repositories).",
+        default=None,
+        use_global_config=True,
+    )
+
+
+def shed_data_manager_config_option():
+    return planemo_option(
+        "--shed_data_manager_config",
+        type=str,
+        help="Location of the shed data manager config file for Galaxy.",
+        default=None,
+        use_global_config=True,
+    )
+
+
+def shed_data_dir_option():
+    return planemo_option(
+        "--shed_data_dir",
+        type=click.Path(file_okay=False, dir_okay=True, resolve_path=True),
+        help="Persistent base directory for shed-install state (local Galaxy "
+        "engine). Seeds defaults for --shed_tool_conf, --shed_tool_path, "
+        "--shed_tool_data_table_config and --shed_data_manager_config so shed "
+        "installs (tools and their data tables) survive Galaxy restarts. "
+        "Individual options still override.",
+        default=None,
+        use_global_config=True,
+    )
+
+
 def tool_dependency_dir_option():
     return planemo_option(
         "--tool_dependency_dir",
@@ -1386,6 +1421,9 @@ def galaxy_config_options():
         postgres_database_storage_location_option(),
         shed_tools_conf_option(),
         shed_tools_directory_option(),
+        shed_tool_data_table_config_option(),
+        shed_data_manager_config_option(),
+        shed_data_dir_option(),
         single_user_mode_option(),
         tool_evaluation_strategy_option(),
     )
