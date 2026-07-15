@@ -6,6 +6,11 @@ History
 .. to_doc
 
 ---------------------
+0.75.46.dev0
+---------------------
+
+
+---------------------
 0.75.45 (2026-07-15)
 ---------------------
 * Add --lf/--failed to re-run only previously-failed tests (thanks to `@mvdbeek`_). `Pull Request 1653`_
