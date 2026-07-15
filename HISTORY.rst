@@ -6,8 +6,13 @@ History
 .. to_doc
 
 ---------------------
-0.75.45.dev0
+0.75.45 (2026-07-15)
 ---------------------
+* Add --lf/--failed to re-run only previously-failed tests (thanks to `@mvdbeek`_). `Pull Request 1653`_
+* Fix workflow polling hang when a step stays new behind a paused branch (thanks to `@mvdbeek`_). `Pull Request 1648`_
+* Bump actions/checkout from 6 to 7. `Pull Request 1655`_
+* Fix describe_outputs crash when tool_state is a dict not a JSON string (thanks to `@jmchilton`_). `Pull Request 1654`_
+* Persist shed-installed data table config across Galaxy restarts (thanks to `@jmchilton`_). `Pull Request 1656`_
 
 
 ---------------------
@@ -2392,6 +2397,11 @@ History
   tools - and more experimental features involving Docker and Homebrew. 7d07782_
 
 .. github_links
+.. _Pull Request 1653: https://github.com/galaxyproject/planemo/pull/1653
+.. _Pull Request 1648: https://github.com/galaxyproject/planemo/pull/1648
+.. _Pull Request 1655: https://github.com/galaxyproject/planemo/pull/1655
+.. _Pull Request 1654: https://github.com/galaxyproject/planemo/pull/1654
+.. _Pull Request 1656: https://github.com/galaxyproject/planemo/pull/1656
 .. _Pull Request 1647: https://github.com/galaxyproject/planemo/pull/1647
 .. _Pull Request 1630: https://github.com/galaxyproject/planemo/pull/1630
 .. _Pull Request 1644: https://github.com/galaxyproject/planemo/pull/1644
