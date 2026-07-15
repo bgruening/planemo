@@ -9,6 +9,7 @@ import yaml
 from planemo.galaxy.config import (
     _all_tool_paths,
     _shared_galaxy_properties,
+    _shed_config_paths,
     galaxy_config,
     get_refgenie_config,
     write_galaxy_config,
@@ -203,3 +204,40 @@ def _test_write_galaxy_config(**kwds):
             config_data = json.load(f)
 
         yield config_data, properties, env
+
+
+def _config_join(*args):
+    return os.path.join("/ephemeral", *args)
+
+
+def test_shed_config_paths_default_ephemeral():
+    """Without --shed_data_dir the paths fall back to the config directory."""
+    paths = _shed_config_paths({}, _config_join)
+    assert paths["shed_tool_conf"] == "/ephemeral/shed_tools_conf.xml"
+    assert paths["shed_tool_path"] == "/ephemeral/shed_tools"
+    assert paths["shed_tool_data_table_config"] == "/ephemeral/shed_tool_data_table_conf.xml"
+    assert paths["shed_data_manager_config_file"] == "/ephemeral/shed_data_manager_conf.xml"
+
+
+def test_shed_config_paths_seeded_by_shed_data_dir():
+    """--shed_data_dir seeds all four shed-install config paths."""
+    paths = _shed_config_paths({"shed_data_dir": "/persist"}, _config_join)
+    assert paths["shed_tool_conf"] == "/persist/shed_tools_conf.xml"
+    assert paths["shed_tool_path"] == "/persist/shed_tools"
+    assert paths["shed_tool_data_table_config"] == "/persist/shed_tool_data_table_conf.xml"
+    assert paths["shed_data_manager_config_file"] == "/persist/shed_data_manager_conf.xml"
+
+
+def test_shed_config_paths_individual_override_wins():
+    """An explicit per-file option overrides the --shed_data_dir default."""
+    kwds = {
+        "shed_data_dir": "/persist",
+        "shed_tool_conf": "/custom/conf.xml",
+        "shed_data_manager_config": "/custom/dm.xml",
+    }
+    paths = _shed_config_paths(kwds, _config_join)
+    assert paths["shed_tool_conf"] == "/custom/conf.xml"
+    assert paths["shed_data_manager_config_file"] == "/custom/dm.xml"
+    # untouched ones still derive from --shed_data_dir
+    assert paths["shed_tool_path"] == "/persist/shed_tools"
+    assert paths["shed_tool_data_table_config"] == "/persist/shed_tool_data_table_conf.xml"

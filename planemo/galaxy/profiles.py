@@ -215,6 +215,8 @@ def _profile_options(ctx, profile_name, **kwds):
         file_path = os.path.join(profile_directory, "files")
         shed_tool_path = os.path.join(profile_directory, "shed_tools")
         shed_tool_conf = os.path.join(profile_directory, "shed_tool_conf.xml")
+        shed_tool_data_table_config = os.path.join(profile_directory, "shed_tool_data_table_conf.xml")
+        shed_data_manager_config = os.path.join(profile_directory, "shed_data_manager_conf.xml")
         tool_dependency_dir = os.path.join(profile_directory, "deps")
 
         mulled_resolution_cache_data_dir = os.path.join(profile_directory, "mulled_resolution_cache")
@@ -224,6 +226,8 @@ def _profile_options(ctx, profile_name, **kwds):
             tool_dependency_dir=tool_dependency_dir,
             shed_tool_conf=shed_tool_conf,
             shed_tool_path=shed_tool_path,
+            shed_tool_data_table_config=shed_tool_data_table_config,
+            shed_data_manager_config=shed_data_manager_config,
             galaxy_brand=profile_name,
             mulled_resolution_cache_data_dir=mulled_resolution_cache_data_dir,
         )

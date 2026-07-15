@@ -120,6 +120,11 @@ SHED_DATA_MANAGER_CONF_TEMPLATE = """<?xml version="1.0"?>
 </data_managers>
 """
 
+SHED_TOOL_DATA_TABLE_CONF_TEMPLATE = """<?xml version="1.0"?>
+<tables>
+</tables>
+"""
+
 EMPTY_JOB_METRICS_TEMPLATE = """<?xml version="1.0"?>
 <job_metrics>
 </job_metrics>
@@ -369,14 +374,16 @@ def local_galaxy_config(ctx, runnables, for_tests=False, **kwds):
         tool_dependency_dir = kwds.get("tool_dependency_dir") or config_join("deps")
         _ensure_directory(tool_dependency_dir)
 
-        shed_tool_conf = kwds.get("shed_tool_conf") or config_join("shed_tools_conf.xml")
+        shed_config_paths = _shed_config_paths(kwds, config_join)
+        shed_tool_conf = shed_config_paths["shed_tool_conf"]
+        shed_tool_path = shed_config_paths["shed_tool_path"]
+        shed_tool_data_table_config = shed_config_paths["shed_tool_data_table_config"]
+        shed_data_manager_config_file = shed_config_paths["shed_data_manager_config_file"]
+
         empty_tool_conf = config_join("empty_tool_conf.xml")
 
         tool_conf = config_join("tool_conf.xml")
 
-        shed_data_manager_config_file = config_join("shed_data_manager_conf.xml")
-
-        shed_tool_path = kwds.get("shed_tool_path") or config_join("shed_tools")
         _ensure_directory(shed_tool_path)
 
         sheds_config_path = _configure_sheds_config_file(ctx, config_directory, runnables, **kwds)
@@ -435,6 +442,7 @@ def local_galaxy_config(ctx, runnables, for_tests=False, **kwds):
                 integrated_tool_panel_config=("${temp_directory}/integrated_tool_panel_conf.xml"),
                 migrated_tools_config=empty_tool_conf,
                 test_data_dir=test_data_dir,  # TODO: make gx respect this
+                shed_tool_data_table_config=shed_tool_data_table_config,
                 shed_data_manager_config_file=shed_data_manager_config_file,
                 outputs_to_working_directory="true",  # this makes Galaxy's files dir RO for dockerized testing
                 object_store_store_by="uuid",
@@ -481,10 +489,12 @@ def local_galaxy_config(ctx, runnables, for_tests=False, **kwds):
         write_file(empty_tool_conf, EMPTY_TOOL_CONF_TEMPLATE)
 
         shed_tool_conf_contents = _sub(SHED_TOOL_CONF_TEMPLATE, template_args)
-        # Write a new shed_tool_conf.xml if needed.
-        write_file(shed_tool_conf, shed_tool_conf_contents, force=False)
-
-        write_file(shed_data_manager_config_file, SHED_DATA_MANAGER_CONF_TEMPLATE)
+        _write_shed_config_files(
+            shed_tool_conf,
+            shed_tool_conf_contents,
+            shed_tool_data_table_config,
+            shed_data_manager_config_file,
+        )
 
         yield LocalGalaxyConfig(
             ctx,
@@ -1558,6 +1568,56 @@ def _sub(template, args):
 def _ensure_directory(path):
     if path is not None and not os.path.exists(path):
         os.makedirs(path)
+
+
+def _shed_config_paths(kwds, config_join):
+    """Resolve persistent locations for the shed-install config files.
+
+    Precedence per file: an explicit per-option value, else a location under
+    ``--shed_data_dir``, else the ephemeral per-run config directory (the
+    historical behavior). Pinning these under a shared ``--shed_data_dir`` lets
+    shed installs -- tools, their data tables and data managers -- survive
+    Galaxy restarts, e.g. across a chunk of workflow tests that reuse a tool.
+
+    Pure path resolution; the caller is responsible for creating directories.
+    """
+    shed_data_dir = kwds.get("shed_data_dir")
+
+    def _resolve(kwd, basename):
+        explicit = kwds.get(kwd)
+        if explicit:
+            return explicit
+        if shed_data_dir:
+            return os.path.join(shed_data_dir, basename)
+        return config_join(basename)
+
+    return dict(
+        shed_tool_conf=_resolve("shed_tool_conf", "shed_tools_conf.xml"),
+        shed_tool_path=_resolve("shed_tool_path", "shed_tools"),
+        shed_tool_data_table_config=_resolve("shed_tool_data_table_config", "shed_tool_data_table_conf.xml"),
+        shed_data_manager_config_file=_resolve("shed_data_manager_config", "shed_data_manager_conf.xml"),
+    )
+
+
+def _write_shed_config_files(
+    shed_tool_conf,
+    shed_tool_conf_contents,
+    shed_tool_data_table_config,
+    shed_data_manager_config_file,
+):
+    """Write the shed-install config files only if absent (force=False).
+
+    Pinning these under ``--shed_data_dir`` or a persistent profile lets
+    shed-install state survive Galaxy restarts. ``write_file`` does not create
+    parent directories, so ensure them first.
+    """
+    for shed_path, contents in (
+        (shed_tool_conf, shed_tool_conf_contents),
+        (shed_tool_data_table_config, SHED_TOOL_DATA_TABLE_CONF_TEMPLATE),
+        (shed_data_manager_config_file, SHED_DATA_MANAGER_CONF_TEMPLATE),
+    ):
+        _ensure_directory(os.path.dirname(shed_path))
+        write_file(shed_path, contents, force=False)
 
 
 __all__ = (
