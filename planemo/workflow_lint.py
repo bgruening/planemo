@@ -176,6 +176,7 @@ def _lint_workflow_artifacts_on_path(lint_context: WorkflowLintContext, path: st
             lint_context.lint("lint_best_practices", _lint_best_practices, potential_workflow_artifact_path)
             lint_context.lint("lint_tests", _lint_tsts, potential_workflow_artifact_path)
             lint_context.lint("lint_tool_ids", _lint_tool_ids, potential_workflow_artifact_path)
+            lint_context.lint("lint_tool_versions", _lint_tool_versions, potential_workflow_artifact_path)
         else:
             # Allow linting ro crates and such also
             pass
@@ -566,41 +567,61 @@ def _assert_tool_id_in_changeset(tool_id: str, changeset_revision: str, repos: D
     return message
 
 
-def _lint_tool_ids(path: str, lint_context: WorkflowLintContext) -> None:
-    def _lint_tool_ids_steps(lint_context: WorkflowLintContext, wf_dict: Dict, ts: ToolShedInstance) -> bool:
-        """Returns whether a single tool_id was invalid"""
-        failed = False
-        steps = wf_dict.get("steps", {})
-        for step in steps.values():
-            if step.get("type", "tool") == "tool" and not step.get("run", {}).get("class") == "GalaxyWorkflow":
-                tool_shed_repository = step.get("tool_shed_repository")
-                if not tool_shed_repository:
-                    # Nothing to validate the tool_id/version against (e.g. built-in tools
-                    # or gxformat2 steps without a pinned repository), so skip the check.
-                    continue
-                changeset_revision = tool_shed_repository.get("changeset_revision")
-                warning_msg = assert_valid_tool_id_in_tool_shed(step["tool_id"], ts, changeset_revision)
-                if warning_msg:
-                    lint_context.error(warning_msg)
-                    failed = True
-            elif step.get("type") == "subworkflow":  # GA SWF
-                sub_failed = _lint_tool_ids_steps(lint_context, step["subworkflow"], ts)
-                if sub_failed:
-                    failed = True
-            elif step.get("run", {}).get("class") == "GalaxyWorkflow":  # gxformat2 SWF
-                sub_failed = _lint_tool_ids_steps(lint_context, step["run"], ts)
-                if sub_failed:
-                    failed = True
-            else:
-                continue
-        return failed
+def _iter_tool_steps(wf_dict: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+    """Yield every tool step in a workflow, recursing into subworkflows."""
+    steps = wf_dict.get("steps", {})
+    if isinstance(steps, dict):
+        steps = steps.values()
+    for step in steps:
+        if step.get("type", "tool") == "tool" and not step.get("run", {}).get("class") == "GalaxyWorkflow":
+            yield step
+        elif step.get("type") == "subworkflow":  # GA SWF
+            yield from _iter_tool_steps(step["subworkflow"])
+        elif step.get("run", {}).get("class") == "GalaxyWorkflow":  # gxformat2 SWF
+            yield from _iter_tool_steps(step["run"])
 
+
+def _lint_tool_ids(path: str, lint_context: WorkflowLintContext) -> None:
     with open(path) as f:
         workflow_dict = ordered_load(f)
     ts = toolshed.ToolShedInstance(url=MAIN_TOOLSHED_URL)
-    failed = _lint_tool_ids_steps(lint_context, workflow_dict, ts)
+    failed = False
+    for step in _iter_tool_steps(workflow_dict):
+        tool_shed_repository = step.get("tool_shed_repository")
+        if not tool_shed_repository:
+            # Nothing to validate the tool_id/version against (e.g. built-in tools
+            # or gxformat2 steps without a pinned repository), so skip the check.
+            continue
+        changeset_revision = tool_shed_repository.get("changeset_revision")
+        warning_msg = assert_valid_tool_id_in_tool_shed(step["tool_id"], ts, changeset_revision)
+        if warning_msg:
+            lint_context.error(warning_msg)
+            failed = True
     if not failed:
         lint_context.valid("All tool ids appear to be valid.")
+    return None
+
+
+def _lint_tool_versions(path: str, lint_context: WorkflowLintContext) -> None:
+    """Check that each step's tool_version matches the version encoded in its tool_id."""
+    with open(path) as f:
+        workflow_dict = ordered_load(f)
+    failed = False
+    for step in _iter_tool_steps(workflow_dict):
+        tool_id = step.get("tool_id")
+        tool_version = step.get("tool_version")
+        if not tool_id or "/repos/" not in tool_id:
+            # Only tool shed tool ids encode the version, so nothing to compare against.
+            continue
+        version_in_tool_id = tool_id.rsplit("/", 1)[1]
+        if tool_version is not None and tool_version != version_in_tool_id:
+            lint_context.error(
+                f"The tool_version '{tool_version}' does not match the version '{version_in_tool_id}' "
+                f"encoded in tool_id {tool_id}."
+            )
+            failed = True
+    if not failed:
+        lint_context.valid("Tool versions appear to match tool ids.")
     return None
 
 

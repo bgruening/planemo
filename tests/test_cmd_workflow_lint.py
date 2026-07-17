@@ -264,6 +264,25 @@ class CmdWorkflowLintTestCase(CliTestCase):
         assert "not in the toolshed" not in result.output
         assert "All tool ids appear to be valid." in result.output
 
+    def test_tool_version_linting_mismatch(self):
+        # tool_id encodes version 1.1.0 but the step's tool_version is 1.0.0.
+        workflow_path = "/".join(
+            (TEST_DATA_DIR, "wf_repos", "autoupdate_tests", "workflow_with_mismatched_tool_version.ga")
+        )
+        lint_cmd = ["workflow_lint", "--skip", "best_practices", workflow_path]
+        result = self._runner.invoke(self._cli.planemo, lint_cmd)
+        assert (
+            "ERROR: The tool_version '1.0.0' does not match the version '1.1.0' encoded in tool_id "
+            "toolshed.g2.bx.psu.edu/repos/bgruening/text_processing/tp_easyjoin_tool/1.1.0" in result.output
+        )
+
+    def test_tool_version_linting_match(self):
+        # tool_id and tool_version agree in this fixture.
+        workflow_path = "/".join((TEST_DATA_DIR, "wf_repos", "autoupdate_tests", "workflow_with_matching_changeset.ga"))
+        lint_cmd = ["workflow_lint", "--skip", "best_practices", workflow_path]
+        result = self._runner.invoke(self._cli.planemo, lint_cmd)
+        assert "Tool versions appear to match tool ids." in result.output
+
     def test_workflow_linting_asserts(self):
         repo = _wf_repo("basic_format2_ok_collection")
         lint_cmd = ["workflow_lint", "--skip", "best_practices", repo]
