@@ -553,9 +553,11 @@ def _assert_tool_id_in_changeset(tool_id: str, changeset_revision: str, repos: D
     # The referenced version is not provided by the pinned changeset. Point at
     # the revision(s) that do provide it so the mismatch is actionable.
     providing_revisions = [
-        repo.get("changeset_revision")
+        repo["changeset_revision"]
         for repo in repos.values()
-        if isinstance(repo, dict) and any(tool_id == tool.get("guid") for tool in repo.get("tools", []))
+        if isinstance(repo, dict)
+        and repo.get("changeset_revision")
+        and any(tool_id == tool.get("guid") for tool in repo.get("tools", []))
     ]
     message = (
         f"The tool {tool_id} is not provided by the pinned changeset_revision "
