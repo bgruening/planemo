@@ -497,18 +497,73 @@ def find_repos_from_tool_id(tool_id: str, ts: ToolShedInstance) -> Tuple[str, Di
         return ("", repos)
 
 
-def assert_valid_tool_id_in_tool_shed(tool_id: str, ts: ToolShedInstance) -> Optional[str]:
+def assert_valid_tool_id_in_tool_shed(
+    tool_id: str, ts: ToolShedInstance, changeset_revision: Optional[str] = None
+) -> Optional[str]:
     if "/repos" not in tool_id:
         return None
     warning_msg, repos = find_repos_from_tool_id(tool_id, ts)
     if warning_msg:
         return warning_msg
+
+    tool_found = any(
+        tool_id == tool.get("guid")
+        for repo in repos.values()
+        if isinstance(repo, dict)
+        for tool in repo.get("tools", [])
+    )
+    if not tool_found:
+        return f"The tool {tool_id} is not in the toolshed (may have been tagged as invalid)."
+
+    if changeset_revision is not None:
+        # The tool version exists in the toolshed; make sure the pinned revision provides it.
+        return _assert_tool_id_in_changeset(tool_id, changeset_revision, repos)
+
+    return None
+
+
+def _assert_tool_id_in_changeset(tool_id: str, changeset_revision: str, repos: Dict[str, Any]) -> Optional[str]:
+    """Check that the pinned ``changeset_revision`` actually provides ``tool_id``.
+
+    When a native ``.ga`` workflow references a tool it also pins a
+    ``tool_shed_repository`` changeset revision, and that is the exact revision
+    Galaxy installs when bootstrapping the workflow's tests. If the pinned
+    revision does not provide the referenced tool version the tool is never
+    installed and the workflow fails to run, so verify the two agree.
+    """
+    matching_revision = None
     for repo in repos.values():
-        tools = repo.get("tools", [])
-        for tool in tools:
-            if tool_id == tool.get("guid"):
-                return None
-    return f"The tool {tool_id} is not in the toolshed (may have been tagged as invalid)."
+        if not isinstance(repo, dict):
+            continue
+        if repo.get("changeset_revision") == changeset_revision:
+            matching_revision = repo
+            break
+
+    if matching_revision is None:
+        return (
+            f"The tool {tool_id} references changeset_revision {changeset_revision}, "
+            "which is not an installable revision of the repository."
+        )
+
+    for tool in matching_revision.get("tools", []):
+        if tool_id == tool.get("guid"):
+            return None
+
+    # The referenced version is not provided by the pinned changeset. Point at
+    # the revision(s) that do provide it so the mismatch is actionable.
+    providing_revisions = [
+        repo.get("changeset_revision")
+        for repo in repos.values()
+        if isinstance(repo, dict) and any(tool_id == tool.get("guid") for tool in repo.get("tools", []))
+    ]
+    message = (
+        f"The tool {tool_id} is not provided by the pinned changeset_revision "
+        f"{changeset_revision} of the repository (the tool_shed_repository revision "
+        "and the tool version in the workflow do not match)."
+    )
+    if providing_revisions:
+        message += f" This version is provided by changeset_revision {', '.join(providing_revisions)}."
+    return message
 
 
 def _lint_tool_ids(path: str, lint_context: WorkflowLintContext) -> None:
@@ -518,7 +573,13 @@ def _lint_tool_ids(path: str, lint_context: WorkflowLintContext) -> None:
         steps = wf_dict.get("steps", {})
         for step in steps.values():
             if step.get("type", "tool") == "tool" and not step.get("run", {}).get("class") == "GalaxyWorkflow":
-                warning_msg = assert_valid_tool_id_in_tool_shed(step["tool_id"], ts)
+                tool_shed_repository = step.get("tool_shed_repository")
+                if not tool_shed_repository:
+                    # Nothing to validate the tool_id/version against (e.g. built-in tools
+                    # or gxformat2 steps without a pinned repository), so skip the check.
+                    continue
+                changeset_revision = tool_shed_repository.get("changeset_revision")
+                warning_msg = assert_valid_tool_id_in_tool_shed(step["tool_id"], ts, changeset_revision)
                 if warning_msg:
                     lint_context.error(warning_msg)
                     failed = True
