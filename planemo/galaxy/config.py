@@ -1271,7 +1271,7 @@ def _find_test_data(runnables, **kwds):
         return os.path.abspath(test_data)
 
     test_data_search_path = "."
-    runnables = [r for r in runnables if r.has_tools and not r.is_remote_workflow_uri]
+    runnables = [r for r in runnables if r.has_path and not r.is_remote_workflow_uri]
     if len(runnables) > 0:
         test_data_search_path = runnables[0].test_data_search_path
 
@@ -1288,7 +1288,7 @@ def _find_tool_data_table(runnables, test_data_dir, **kwds) -> Optional[List[str
         return [os.path.abspath(table_path) for table_path in tool_data_table]
 
     tool_data_search_path = "."
-    runnables = [r for r in runnables if r.has_tools and not r.is_remote_workflow_uri]
+    runnables = [r for r in runnables if r.has_path and not r.is_remote_workflow_uri]
     if len(runnables) > 0:
         tool_data_search_path = runnables[0].tool_data_search_path
 

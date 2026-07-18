@@ -144,17 +144,17 @@ class Runnable(NamedTuple):
         return None
 
     @property
-    def has_tools(self) -> property:
+    def has_tools(self) -> bool:
         """Boolean indicating if this runnable corresponds to one or more tools."""
-        return _runnable_delegate_attribute("has_tools")
+        return self.type.has_tools
 
     @property
-    def is_single_artifact(self) -> property:
+    def is_single_artifact(self) -> bool:
         """Boolean indicating if this runnable is a single artifact.
 
         Currently only directories are considered not a single artifact.
         """
-        return _runnable_delegate_attribute("is_single_artifact")
+        return self.type.is_single_artifact
 
 
 class Rerunnable(NamedTuple):
@@ -163,13 +163,6 @@ class Rerunnable(NamedTuple):
     rerunnable_id: str
     rerunnable_type: str
     server_url: str
-
-
-def _runnable_delegate_attribute(attribute: str) -> property:
-    def getter(runnable):
-        return getattr(runnable.type, attribute)
-
-    return property(getter)
 
 
 def workflows_from_dockstore_yaml(path):
