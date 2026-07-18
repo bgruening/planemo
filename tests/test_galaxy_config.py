@@ -17,6 +17,8 @@ from planemo.galaxy.config import (
 from planemo.runnable import (
     for_path,
     for_uri,
+    Runnable,
+    RunnableType,
 )
 from .test_utils import (
     create_test_context,
@@ -90,11 +92,6 @@ def test_all_tool_paths_excludes_workflows():
 def test_runnable_delegated_properties_are_booleans():
     # has_tools / is_single_artifact must delegate to the RunnableType and return
     # real booleans (previously they returned an always-truthy property object).
-    from planemo.runnable import (
-        Runnable,
-        RunnableType,
-    )
-
     for runnable_type in RunnableType:
         runnable = Runnable("some_path", runnable_type)
         assert isinstance(runnable.has_tools, bool)
