@@ -78,10 +78,15 @@ def generate_acknowledgements():
                     req = requests.get(api_url).json()
                     title = req.get("title", "")
                     login = req["user"]["login"]
+                    is_bot = req["user"].get("type") == "Bot" or login.endswith("[bot]")
 
-                    # Format acknowledgement line
+                    # Format acknowledgement line - skip crediting bots, they have no
+                    # contributor link target and break twine's RST check.
                     title_clean = title.rstrip(".")
-                    ack_line = f"* {title_clean} (thanks to `@{login}`_). `Pull Request {pr_number}`_"
+                    if is_bot:
+                        ack_line = f"* {title_clean}. `Pull Request {pr_number}`_"
+                    else:
+                        ack_line = f"* {title_clean} (thanks to `@{login}`_). `Pull Request {pr_number}`_"
                     acknowledgements.append(ack_line)
 
                     # Add GitHub link
