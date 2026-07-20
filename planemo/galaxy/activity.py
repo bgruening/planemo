@@ -658,6 +658,18 @@ class GalaxyBaseRunResponse(SuccessfulRunResponse):
                             attach_file_properties(element["object"], cwl_output_element)
 
                 output_metadata = self._get_metadata("dataset_collection", output_dataset_id)
+                if cwl_output is None:
+                    # galaxy-tool-util's output_to_cwl_json returns None for collection types it
+                    # cannot translate (anything whose outermost type is not list, paired or
+                    # record - e.g. sample_sheet). Without this guard attach_file_properties
+                    # fails with "object of type 'NoneType' has no len()", which names neither
+                    # the output nor the collection type responsible.
+                    raise Exception(
+                        f"Cannot collect output '{runnable_output_id}': collection type "
+                        f"'{output_metadata.get('collection_type')}' is not supported by the "
+                        "installed galaxy-tool-util's output_to_cwl_json. Upgrading "
+                        "galaxy-tool-util may resolve this."
+                    )
                 attach_file_properties(output_metadata, cwl_output)
                 output_dict_value = output_metadata
 
