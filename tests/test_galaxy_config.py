@@ -17,6 +17,8 @@ from planemo.galaxy.config import (
 from planemo.runnable import (
     for_path,
     for_uri,
+    Runnable,
+    RunnableType,
 )
 from .test_utils import (
     create_test_context,
@@ -75,6 +77,31 @@ def test_all_tool_paths_excludes_remote_galaxy_tools():
 
     assert local_tool in tool_paths
     assert f"gxid://tools/{remote_tool_id}" not in tool_paths
+
+
+def test_all_tool_paths_excludes_workflows():
+    # A workflow's own .ga path must never be handed to Galaxy as a tool - Galaxy
+    # would try to XML-parse the JSON workflow and fail. See has_tools below.
+    workflow = os.path.join(os.path.dirname(__file__), "data", "wf1.ga")
+    runnable = for_path(workflow)
+
+    assert runnable.has_tools is False
+    assert workflow not in _all_tool_paths([runnable])
+
+
+def test_runnable_delegated_properties_are_booleans():
+    # has_tools / is_single_artifact must delegate to the RunnableType and return
+    # real booleans (previously they returned an always-truthy property object).
+    for runnable_type in RunnableType:
+        runnable = Runnable("some_path", runnable_type)
+        assert isinstance(runnable.has_tools, bool)
+        assert isinstance(runnable.is_single_artifact, bool)
+        assert runnable.has_tools == runnable_type.has_tools
+        assert runnable.is_single_artifact == runnable_type.is_single_artifact
+
+    assert Runnable("t.xml", RunnableType.galaxy_tool).has_tools is True
+    assert Runnable("w.ga", RunnableType.galaxy_workflow).has_tools is False
+    assert Runnable("d", RunnableType.directory).is_single_artifact is False
 
 
 def _assert_property_is(config, prop, value):
