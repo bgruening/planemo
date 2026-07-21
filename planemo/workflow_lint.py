@@ -176,6 +176,7 @@ def _lint_workflow_artifacts_on_path(lint_context: WorkflowLintContext, path: st
             lint_context.lint("lint_best_practices", _lint_best_practices, potential_workflow_artifact_path)
             lint_context.lint("lint_tests", _lint_tsts, potential_workflow_artifact_path)
             lint_context.lint("lint_tool_ids", _lint_tool_ids, potential_workflow_artifact_path)
+            lint_context.lint("lint_tool_versions", _lint_tool_versions, potential_workflow_artifact_path)
         else:
             # Allow linting ro crates and such also
             pass
@@ -497,49 +498,132 @@ def find_repos_from_tool_id(tool_id: str, ts: ToolShedInstance) -> Tuple[str, Di
         return ("", repos)
 
 
-def assert_valid_tool_id_in_tool_shed(tool_id: str, ts: ToolShedInstance) -> Optional[str]:
+def assert_valid_tool_id_in_tool_shed(
+    tool_id: str, ts: ToolShedInstance, changeset_revision: Optional[str] = None
+) -> Optional[str]:
     if "/repos" not in tool_id:
         return None
     warning_msg, repos = find_repos_from_tool_id(tool_id, ts)
     if warning_msg:
         return warning_msg
+
+    tool_found = any(
+        tool_id == tool.get("guid")
+        for repo in repos.values()
+        if isinstance(repo, dict)
+        for tool in repo.get("tools", [])
+    )
+    if not tool_found:
+        return f"The tool {tool_id} is not in the toolshed (may have been tagged as invalid)."
+
+    if changeset_revision is not None:
+        # The tool version exists in the toolshed; make sure the pinned revision provides it.
+        return _assert_tool_id_in_changeset(tool_id, changeset_revision, repos)
+
+    return None
+
+
+def _assert_tool_id_in_changeset(tool_id: str, changeset_revision: str, repos: Dict[str, Any]) -> Optional[str]:
+    """Check that the pinned ``changeset_revision`` actually provides ``tool_id``.
+
+    When a native ``.ga`` workflow references a tool it also pins a
+    ``tool_shed_repository`` changeset revision, and that is the exact revision
+    Galaxy installs when bootstrapping the workflow's tests. If the pinned
+    revision does not provide the referenced tool version the tool is never
+    installed and the workflow fails to run, so verify the two agree.
+    """
+    matching_revision = None
     for repo in repos.values():
-        tools = repo.get("tools", [])
-        for tool in tools:
-            if tool_id == tool.get("guid"):
-                return None
-    return f"The tool {tool_id} is not in the toolshed (may have been tagged as invalid)."
+        if not isinstance(repo, dict):
+            continue
+        if repo.get("changeset_revision") == changeset_revision:
+            matching_revision = repo
+            break
+
+    if matching_revision is None:
+        return (
+            f"The tool {tool_id} references changeset_revision {changeset_revision}, "
+            "which is not an installable revision of the repository."
+        )
+
+    for tool in matching_revision.get("tools", []):
+        if tool_id == tool.get("guid"):
+            return None
+
+    # The referenced version is not provided by the pinned changeset. Point at
+    # the revision(s) that do provide it so the mismatch is actionable.
+    providing_revisions = [
+        repo["changeset_revision"]
+        for repo in repos.values()
+        if isinstance(repo, dict)
+        and repo.get("changeset_revision")
+        and any(tool_id == tool.get("guid") for tool in repo.get("tools", []))
+    ]
+    message = (
+        f"The tool {tool_id} is not provided by the pinned changeset_revision "
+        f"{changeset_revision} of the repository (the tool_shed_repository revision "
+        "and the tool version in the workflow do not match)."
+    )
+    if providing_revisions:
+        message += f" This version is provided by changeset_revision {', '.join(providing_revisions)}."
+    return message
+
+
+def _iter_tool_steps(wf_dict: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+    """Yield every tool step in a workflow, recursing into subworkflows."""
+    steps = wf_dict.get("steps", {})
+    if isinstance(steps, dict):
+        steps = steps.values()
+    for step in steps:
+        if step.get("type", "tool") == "tool" and not step.get("run", {}).get("class") == "GalaxyWorkflow":
+            yield step
+        elif step.get("type") == "subworkflow":  # GA SWF
+            yield from _iter_tool_steps(step["subworkflow"])
+        elif step.get("run", {}).get("class") == "GalaxyWorkflow":  # gxformat2 SWF
+            yield from _iter_tool_steps(step["run"])
 
 
 def _lint_tool_ids(path: str, lint_context: WorkflowLintContext) -> None:
-    def _lint_tool_ids_steps(lint_context: WorkflowLintContext, wf_dict: Dict, ts: ToolShedInstance) -> bool:
-        """Returns whether a single tool_id was invalid"""
-        failed = False
-        steps = wf_dict.get("steps", {})
-        for step in steps.values():
-            if step.get("type", "tool") == "tool" and not step.get("run", {}).get("class") == "GalaxyWorkflow":
-                warning_msg = assert_valid_tool_id_in_tool_shed(step["tool_id"], ts)
-                if warning_msg:
-                    lint_context.error(warning_msg)
-                    failed = True
-            elif step.get("type") == "subworkflow":  # GA SWF
-                sub_failed = _lint_tool_ids_steps(lint_context, step["subworkflow"], ts)
-                if sub_failed:
-                    failed = True
-            elif step.get("run", {}).get("class") == "GalaxyWorkflow":  # gxformat2 SWF
-                sub_failed = _lint_tool_ids_steps(lint_context, step["run"], ts)
-                if sub_failed:
-                    failed = True
-            else:
-                continue
-        return failed
-
     with open(path) as f:
         workflow_dict = ordered_load(f)
     ts = toolshed.ToolShedInstance(url=MAIN_TOOLSHED_URL)
-    failed = _lint_tool_ids_steps(lint_context, workflow_dict, ts)
+    failed = False
+    for step in _iter_tool_steps(workflow_dict):
+        tool_shed_repository = step.get("tool_shed_repository")
+        if not tool_shed_repository:
+            # Nothing to validate the tool_id/version against (e.g. built-in tools
+            # or gxformat2 steps without a pinned repository), so skip the check.
+            continue
+        changeset_revision = tool_shed_repository.get("changeset_revision")
+        warning_msg = assert_valid_tool_id_in_tool_shed(step["tool_id"], ts, changeset_revision)
+        if warning_msg:
+            lint_context.error(warning_msg)
+            failed = True
     if not failed:
         lint_context.valid("All tool ids appear to be valid.")
+    return None
+
+
+def _lint_tool_versions(path: str, lint_context: WorkflowLintContext) -> None:
+    """Check that each step's tool_version matches the version encoded in its tool_id."""
+    with open(path) as f:
+        workflow_dict = ordered_load(f)
+    failed = False
+    for step in _iter_tool_steps(workflow_dict):
+        tool_id = step.get("tool_id")
+        tool_version = step.get("tool_version")
+        if not tool_id or "/repos/" not in tool_id:
+            # Only tool shed tool ids encode the version, so nothing to compare against.
+            continue
+        version_in_tool_id = tool_id.rsplit("/", 1)[1]
+        if tool_version is not None and tool_version != version_in_tool_id:
+            lint_context.error(
+                f"The tool_version '{tool_version}' does not match the version '{version_in_tool_id}' "
+                f"encoded in tool_id {tool_id}."
+            )
+            failed = True
+    if not failed:
+        lint_context.valid("Tool versions appear to match tool ids.")
     return None
 
 
