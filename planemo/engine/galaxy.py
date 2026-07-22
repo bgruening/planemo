@@ -3,7 +3,9 @@
 import abc
 import contextlib
 from typing import (
+    Any,
     Callable,
+    Dict,
     List,
     Optional,
     TYPE_CHECKING,
@@ -33,6 +35,19 @@ if TYPE_CHECKING:
     from planemo.cli import PlanemoCliContext
 
 INSTALLING_MESSAGE = "Installing repositories - this may take some time..."
+
+
+def log_service_logs_on_failure(ctx: "PlanemoCliContext", config, results: List[Dict[str, Any]]) -> None:
+    """Dump logs of services running alongside Galaxy if a test didn't succeed.
+
+    Galaxy's own log covers only the web process, but uploads run in Celery - so
+    a test that dies staging its inputs otherwise leaves no trace at all in the
+    log Planemo streams.
+    """
+    if results and all(result["data"].get("status") == "success" for result in results):
+        return
+    for name, contents in config.service_log_contents.items():
+        ctx.log(f"Tail of Galaxy service log [{name}]:\n{contents}")
 
 
 class GalaxyEngine(BaseEngine, metaclass=abc.ABCMeta):
@@ -111,6 +126,7 @@ class GalaxyEngine(BaseEngine, metaclass=abc.ABCMeta):
                         )
 
                     verbose = self._ctx.verbose
+                    result_index = len(test_results)
                     try:
                         if verbose:
                             # TODO: this is pretty hacky, it'd be better to send a stream
@@ -128,6 +144,8 @@ class GalaxyEngine(BaseEngine, metaclass=abc.ABCMeta):
                         )
                     except Exception:
                         pass
+
+                    log_service_logs_on_failure(self._ctx, config, test_results[result_index:])
 
         return test_results
 

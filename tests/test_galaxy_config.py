@@ -12,6 +12,7 @@ from planemo.galaxy.config import (
     _shed_config_paths,
     galaxy_config,
     get_refgenie_config,
+    tail_log_directory,
     write_galaxy_config,
 )
 from planemo.runnable import (
@@ -268,3 +269,36 @@ def test_shed_config_paths_individual_override_wins():
     # untouched ones still derive from --shed_data_dir
     assert paths["shed_tool_path"] == "/persist/shed_tools"
     assert paths["shed_tool_data_table_config"] == "/persist/shed_tool_data_table_conf.xml"
+
+
+def test_tail_log_directory_missing_directory():
+    """A Galaxy that never started leaves no log directory at all."""
+    with TempDirectoryContext() as tdc:
+        assert tail_log_directory(os.path.join(tdc.temp_directory, "nope")) == {}
+
+
+def test_tail_log_directory_reads_only_logs():
+    with TempDirectoryContext() as tdc:
+        log_directory = tdc.temp_directory
+        with open(os.path.join(log_directory, "celery.log"), "w") as f:
+            f.write("task failed\n")
+        with open(os.path.join(log_directory, "celery_broker.sqlite"), "w") as f:
+            f.write("not a log\n")
+        os.mkdir(os.path.join(log_directory, "subdir.log"))
+        assert tail_log_directory(log_directory) == {"celery.log": "task failed"}
+
+
+def test_tail_log_directory_truncates_to_tail():
+    with TempDirectoryContext() as tdc:
+        log_directory = tdc.temp_directory
+        with open(os.path.join(log_directory, "celery.log"), "w") as f:
+            f.writelines(f"line {i}\n" for i in range(10))
+        tails = tail_log_directory(log_directory, lines=3)
+        assert tails["celery.log"] == "line 7\nline 8\nline 9"
+
+
+def test_tail_log_directory_skips_empty_logs():
+    with TempDirectoryContext() as tdc:
+        log_directory = tdc.temp_directory
+        open(os.path.join(log_directory, "gunicorn.log"), "w").close()
+        assert tail_log_directory(log_directory) == {}

@@ -12,6 +12,7 @@ import shutil
 import sqlite3
 import threading
 import time
+from collections import deque
 from string import Template
 from tempfile import (
     mkdtemp,
@@ -170,6 +171,7 @@ COMMAND_STARTUP_COMMAND = "./scripts/common_startup.sh ${COMMON_STARTUP_ARGS}"
 CLEANUP_IGNORE_ERRORS = True
 DEFAULT_GALAXY_BRAND = "Configured by Planemo"
 DEFAULT_TOOL_INSTALL_TIMEOUT = 60 * 60 * 1
+SERVICE_LOG_TAIL_LINES = 100
 UNINITIALIZED = object()
 
 
@@ -214,6 +216,24 @@ def read_log(ctx, log_path, e: threading.Event):
             if log_lines:
                 ctx.log(log_lines.rstrip())
             log_fh.close()
+
+
+def tail_log_directory(log_directory: str, lines: int = SERVICE_LOG_TAIL_LINES) -> Dict[str, str]:
+    """Map each ``.log`` file in ``log_directory`` to the tail of its contents."""
+    if not os.path.isdir(log_directory):
+        return {}
+    tails = {}
+    for name in sorted(os.listdir(log_directory)):
+        if not name.endswith(".log"):
+            continue
+        path = os.path.join(log_directory, name)
+        if not os.path.isfile(path):
+            continue
+        with open(path, errors="replace") as log_fh:
+            contents = "".join(deque(log_fh, lines)).rstrip()
+        if contents:
+            tails[name] = contents
+    return tails
 
 
 @contextlib.contextmanager
@@ -1002,6 +1022,15 @@ class BaseGalaxyConfig(GalaxyInterface):
             self._target_user_config = self.user_gi.config.get_config()
         return self._target_user_config
 
+    @property
+    def service_log_contents(self) -> Dict[str, str]:
+        """Tails of logs for services running alongside the Galaxy web process.
+
+        Galaxy's own log covers only the web process - uploads for instance run
+        entirely in Celery, so a failure there is invisible without these.
+        """
+        return {}
+
 
 class BaseManagedGalaxyConfig(BaseGalaxyConfig):
     def __init__(
@@ -1166,6 +1195,12 @@ class LocalGalaxyConfig(BaseManagedGalaxyConfig):
     @property
     def gravity_state_dir(self):
         return self.env["GRAVITY_STATE_DIR"]
+
+    @property
+    def service_log_contents(self) -> Dict[str, str]:
+        if not self.env.get("GRAVITY_STATE_DIR"):
+            return {}
+        return tail_log_directory(os.path.join(self.gravity_state_dir, "log"))
 
     def kill(self):
         if self._ctx.verbose:
