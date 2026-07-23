@@ -579,6 +579,32 @@ class GalaxyBaseRunResponse(SuccessfulRunResponse):
         else:
             raise Exception("Unknown history content type encountered [%s]" % history_content_type)
 
+    def _collect_collection_output(self, runnable_output_id, output_dataset_id, cwl_output):
+        def attach_file_properties(collection, cwl_output):
+            elements = collection["elements"]
+            assert len(elements) == len(cwl_output)
+            for element, cwl_output_element in zip(elements, cwl_output):
+                element["_output_object"] = cwl_output_element
+                if isinstance(cwl_output_element, list):
+                    assert "elements" in element["object"]
+                    attach_file_properties(element["object"], cwl_output_element)
+
+        output_metadata = self._get_metadata("dataset_collection", output_dataset_id)
+        if cwl_output is None:
+            # galaxy-tool-util's output_to_cwl_json returns None for collection types it
+            # cannot translate (anything whose outermost type is not list, paired or
+            # record - e.g. sample_sheet). Without this guard attach_file_properties
+            # fails with "object of type 'NoneType' has no len()", which names neither
+            # the output nor the collection type responsible.
+            raise Exception(
+                f"Cannot collect output '{runnable_output_id}': collection type "
+                f"'{output_metadata.get('collection_type')}' is not supported by the "
+                "installed galaxy-tool-util's output_to_cwl_json. Upgrading "
+                "galaxy-tool-util may resolve this."
+            )
+        attach_file_properties(output_metadata, cwl_output)
+        return output_metadata
+
     def collect_outputs(
         self,
         output_directory: Optional[str] = None,
@@ -647,19 +673,7 @@ class GalaxyBaseRunResponse(SuccessfulRunResponse):
             if is_cwl or output_src["src"] == "hda":
                 output_dict_value = cwl_output
             else:
-
-                def attach_file_properties(collection, cwl_output):
-                    elements = collection["elements"]
-                    assert len(elements) == len(cwl_output)
-                    for element, cwl_output_element in zip(elements, cwl_output):
-                        element["_output_object"] = cwl_output_element
-                        if isinstance(cwl_output_element, list):
-                            assert "elements" in element["object"]
-                            attach_file_properties(element["object"], cwl_output_element)
-
-                output_metadata = self._get_metadata("dataset_collection", output_dataset_id)
-                attach_file_properties(output_metadata, cwl_output)
-                output_dict_value = output_metadata
+                output_dict_value = self._collect_collection_output(runnable_output_id, output_dataset_id, cwl_output)
 
             if output_id:
                 return output_dict_value
