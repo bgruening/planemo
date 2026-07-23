@@ -2,15 +2,22 @@
 
 from typing import (
     Any,
+    cast,
     Dict,
     List,
     Optional,
+    TYPE_CHECKING,
 )
 
 import pytest
 
 from planemo.galaxy import activity
 from planemo.galaxy.activity import GalaxyBaseRunResponse
+
+if TYPE_CHECKING:
+    from bioblend.galaxy import GalaxyInstance
+
+    from planemo.cli import PlanemoCliContext
 
 SAMPLE_SHEET_COLLECTION_METADATA: Dict[str, Any] = {
     "id": "e9d955ca403027d5",
@@ -90,9 +97,9 @@ def unsupported_collection_response(monkeypatch) -> CollectionRunResponse:
         type = None
 
     return CollectionRunResponse(
-        ctx=MockContext(),
+        ctx=cast("PlanemoCliContext", MockContext()),
         runnable=MockRunnable(),
-        user_gi=None,
+        user_gi=cast("GalaxyInstance", None),
         history_id="a2619fc82a1e31e5",
         log="",
     )
